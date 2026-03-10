@@ -272,10 +272,6 @@ function resetCamera() {
 }
 
 // ─── File Input ────────────────────────────────────────────────────────────
-document.getElementById('upload-btn').addEventListener('click', () => {
-  document.getElementById('file-input').click();
-});
-
 document.getElementById('file-input').addEventListener('change', (e) => {
   if (e.target.files[0]) loadFBX(e.target.files[0]);
 });

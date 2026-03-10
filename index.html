@@ -32,7 +32,6 @@
         transform: translateX(-50%);
         background: #4f8ef7;
         color: white;
-        border: none;
         padding: 12px 28px;
         border-radius: 8px;
         font-size: 16px;
@@ -40,9 +39,10 @@
         z-index: 100;
         box-shadow: 0 4px 15px rgba(79,142,247,0.4);
         transition: background 0.2s;
+        display: inline-block;
+        user-select: none;
       }
       #upload-btn:hover { background: #3a7bd5; }
-      #file-input { display: none; }
       #info {
         position: fixed;
         top: 20px;
@@ -62,8 +62,8 @@
       <div class="text">松开以导入 FBX 文件</div>
     </div>
     <div id="info">拖拽 FBX 文件到此处，或点击下方按钮导入</div>
-    <button id="upload-btn">📂 导入 FBX 文件</button>
-    <input type="file" id="file-input" accept=".fbx" />
+    <label id="upload-btn" for="file-input">📂 导入 FBX 文件</label>
+    <input type="file" id="file-input" accept=".fbx" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);opacity:0;width:160px;height:44px;cursor:pointer;z-index:101;" />
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
