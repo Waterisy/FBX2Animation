@@ -1,69 +1,625 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FBX2Animation - Three.js FBX动画播放器</title>
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #1a1a2e; overflow: hidden; font-family: sans-serif; }
-      #canvas-container { width: 100vw; height: 100vh; }
-      #drop-overlay {
-        position: fixed;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        background: rgba(0,0,0,0.7);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        z-index: 999;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.2s;
-      }
-      #drop-overlay.active { opacity: 1; pointer-events: all; }
-      #drop-overlay .icon { font-size: 80px; margin-bottom: 20px; }
-      #drop-overlay .text { color: white; font-size: 24px; }
-      #upload-btn {
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: #4f8ef7;
-        color: white;
-        padding: 12px 28px;
-        border-radius: 8px;
-        font-size: 16px;
-        cursor: pointer;
-        z-index: 100;
-        box-shadow: 0 4px 15px rgba(79,142,247,0.4);
-        transition: background 0.2s;
-        display: inline-block;
-        user-select: none;
-      }
-      #upload-btn:hover { background: #3a7bd5; }
-      #info {
-        position: fixed;
-        top: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: #aaa;
-        font-size: 14px;
-        z-index: 100;
-        pointer-events: none;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="canvas-container"></div>
-    <div id="drop-overlay">
-      <div class="icon">📦</div>
-      <div class="text">松开以导入 FBX 文件</div>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FBX2Animation - FBX动画播放器</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0f0f1a;
+    font-family: 'Segoe UI', sans-serif;
+    overflow: hidden;
+    color: #eee;
+  }
+
+  #app { width: 100vw; height: 100vh; position: relative; }
+
+  canvas { display: block; }
+
+  /* ── 欢迎遮罩 ── */
+  #welcome {
+    position: fixed; inset: 0;
+    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a3e 100%);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 500;
+    transition: opacity 0.5s;
+  }
+  #welcome.hidden { opacity: 0; pointer-events: none; }
+  #welcome h1 { font-size: 2.5rem; margin-bottom: 8px; background: linear-gradient(90deg,#4f8ef7,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
+  #welcome p  { color: #888; margin-bottom: 40px; font-size: 1rem; }
+
+  #drop-zone {
+    width: 360px; height: 200px;
+    border: 2px dashed #4f8ef7;
+    border-radius: 16px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: rgba(79,142,247,0.05);
+  }
+  #drop-zone:hover, #drop-zone.drag-over {
+    background: rgba(79,142,247,0.15);
+    border-color: #a78bfa;
+    transform: scale(1.02);
+  }
+  #drop-zone .dz-icon { font-size: 3rem; margin-bottom: 12px; }
+  #drop-zone .dz-text { color: #aaa; font-size: 0.95rem; text-align: center; line-height: 1.6; }
+  #drop-zone .dz-hint { color: #555; font-size: 0.8rem; margin-top: 8px; }
+
+  /* ── 顶部状态栏 ── */
+  #statusbar {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 40px;
+    background: rgba(15,15,26,0.85);
+    backdrop-filter: blur(8px);
+    display: flex; align-items: center; padding: 0 16px;
+    gap: 16px; z-index: 100;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    font-size: 0.8rem; color: #888;
+  }
+  #statusbar .title { color: #ccc; font-weight: 600; margin-right: 8px; }
+  #statusbar #file-info { flex: 1; }
+  #statusbar #load-btn {
+    background: #4f8ef7; color: #fff; border: none;
+    padding: 5px 14px; border-radius: 6px;
+    cursor: pointer; font-size: 0.8rem;
+    transition: background 0.2s;
+  }
+  #statusbar #load-btn:hover { background: #3a7bd5; }
+
+  /* ── GUI 面板 ── */
+  #gui-panel {
+    position: fixed; right: 16px; top: 56px;
+    width: 260px;
+    background: rgba(15,15,26,0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    overflow: hidden;
+    z-index: 100;
+    display: none;
+  }
+  .gui-header {
+    padding: 10px 14px;
+    background: rgba(79,142,247,0.15);
+    font-size: 0.8rem; font-weight: 600;
+    color: #a0bcf7;
+    cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+    user-select: none;
+  }
+  .gui-header:hover { background: rgba(79,142,247,0.25); }
+  .gui-body { padding: 10px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .gui-body.collapsed { display: none; }
+
+  .gui-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .gui-label { font-size: 0.75rem; color: #888; white-space: nowrap; flex-shrink: 0; }
+  .gui-row input[type=range] { flex: 1; accent-color: #4f8ef7; cursor: pointer; }
+  .gui-row select {
+    flex: 1; background: #1a1a2e; color: #eee;
+    border: 1px solid #333; border-radius: 4px;
+    padding: 3px 6px; font-size: 0.75rem; cursor: pointer;
+  }
+  .gui-row input[type=checkbox] { accent-color: #4f8ef7; cursor: pointer; width: 14px; height: 14px; }
+  .gui-val { font-size: 0.7rem; color: #4f8ef7; width: 32px; text-align: right; }
+
+  .gui-btn-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .gui-btn {
+    flex: 1; min-width: 60px;
+    background: rgba(79,142,247,0.15); color: #a0bcf7;
+    border: 1px solid rgba(79,142,247,0.3);
+    border-radius: 6px; padding: 5px 8px;
+    font-size: 0.72rem; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .gui-btn:hover { background: rgba(79,142,247,0.3); }
+  .gui-btn.active { background: #4f8ef7; color: #fff; }
+
+  .gui-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 4px 0; }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .info-cell { background: rgba(255,255,255,0.04); border-radius: 6px; padding: 6px 8px; text-align: center; }
+  .info-cell .val { font-size: 0.9rem; font-weight: 600; color: #4f8ef7; }
+  .info-cell .key { font-size: 0.65rem; color: #555; margin-top: 2px; }
+
+  /* ── 进度条 ── */
+  #progress-wrap {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 3px; background: rgba(255,255,255,0.05);
+    z-index: 200; display: none;
+  }
+  #progress-bar { height: 100%; background: #4f8ef7; width: 0%; transition: width 0.1s; }
+
+  /* ── 拖拽高亮 ── */
+  #drag-overlay {
+    position: fixed; inset: 0;
+    background: rgba(79,142,247,0.12);
+    border: 3px dashed #4f8ef7;
+    z-index: 400; display: none;
+    align-items: center; justify-content: center;
+    font-size: 1.5rem; color: #4f8ef7; font-weight: 600;
+    pointer-events: none;
+  }
+  #drag-overlay.active { display: flex; }
+
+  #file-input { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 欢迎页 -->
+  <div id="welcome">
+    <h1>FBX2Animation</h1>
+    <p>Three.js FBX 动画播放器</p>
+    <div id="drop-zone">
+      <div class="dz-icon">📦</div>
+      <div class="dz-text">拖拽 FBX 文件到这里<br>或点击选择文件</div>
+      <div class="dz-hint">支持包含骨骼动画的 .fbx 文件</div>
     </div>
-    <div id="info">拖拽 FBX 文件到此处，或点击下方按钮导入</div>
-    <label id="upload-btn" for="file-input">📂 导入 FBX 文件</label>
-    <input type="file" id="file-input" accept=".fbx" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);opacity:0;width:160px;height:44px;cursor:pointer;z-index:101;" />
-    <script type="module" src="/src/main.js"></script>
-  </body>
+  </div>
+
+  <!-- 拖拽高亮 -->
+  <div id="drag-overlay">📦 松开导入 FBX</div>
+
+  <!-- 顶部状态栏 -->
+  <div id="statusbar">
+    <span class="title">FBX2Animation</span>
+    <span id="file-info">未加载模型</span>
+    <button id="load-btn">📂 导入FBX</button>
+  </div>
+
+  <!-- GUI 面板 -->
+  <div id="gui-panel">
+    <!-- 动画控制 -->
+    <div class="gui-section" id="sec-anim">
+      <div class="gui-header" onclick="toggleSection('anim')">🎬 动画控制 <span id="arrow-anim">▼</span></div>
+      <div class="gui-body" id="body-anim">
+        <div class="gui-row">
+          <span class="gui-label">当前动画</span>
+          <select id="anim-select" onchange="switchAnim(this.value)"></select>
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">速度</span>
+          <input type="range" id="speed-slider" min="0.1" max="3" step="0.05" value="1" oninput="setSpeed(this.value)">
+          <span class="gui-val" id="speed-val">1.0x</span>
+        </div>
+        <div class="gui-btn-row">
+          <button class="gui-btn active" id="btn-play" onclick="togglePlay()">⏸ 暂停</button>
+          <button class="gui-btn" onclick="resetAnim()">⏮ 重置</button>
+          <button class="gui-btn" id="btn-loop" onclick="toggleLoop()">🔁 循环</button>
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">进度</span>
+          <input type="range" id="progress-slider" min="0" max="1" step="0.001" value="0" oninput="seekAnim(this.value)">
+          <span class="gui-val" id="time-val">0.0s</span>
+        </div>
+      </div>
+    </div>
+    <div class="gui-divider"></div>
+
+    <!-- 模型信息 -->
+    <div class="gui-section" id="sec-info">
+      <div class="gui-header" onclick="toggleSection('info')">📊 模型信息 <span id="arrow-info">▼</span></div>
+      <div class="gui-body" id="body-info">
+        <div class="info-grid">
+          <div class="info-cell"><div class="val" id="info-meshes">-</div><div class="key">网格数</div></div>
+          <div class="info-cell"><div class="val" id="info-polys">-</div><div class="key">面数</div></div>
+          <div class="info-cell"><div class="val" id="info-anims">-</div><div class="key">动画数</div></div>
+          <div class="info-cell"><div class="val" id="info-bones">-</div><div class="key">骨骼数</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="gui-divider"></div>
+
+    <!-- 场景设置 -->
+    <div class="gui-section" id="sec-scene">
+      <div class="gui-header" onclick="toggleSection('scene')">🌍 场景 <span id="arrow-scene">▼</span></div>
+      <div class="gui-body" id="body-scene">
+        <div class="gui-row">
+          <span class="gui-label">显示地面</span>
+          <input type="checkbox" id="cb-ground" checked onchange="toggleGround(this.checked)">
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">显示网格</span>
+          <input type="checkbox" id="cb-grid" checked onchange="toggleGrid(this.checked)">
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">线框模式</span>
+          <input type="checkbox" id="cb-wire" onchange="toggleWire(this.checked)">
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">显示骨骼</span>
+          <input type="checkbox" id="cb-skel" onchange="toggleSkeleton(this.checked)">
+        </div>
+        <div class="gui-btn-row">
+          <button class="gui-btn" onclick="resetCamera()">📷 重置视角</button>
+        </div>
+      </div>
+    </div>
+    <div class="gui-divider"></div>
+
+    <!-- 灯光 -->
+    <div class="gui-section" id="sec-light">
+      <div class="gui-header" onclick="toggleSection('light')">💡 灯光 <span id="arrow-light">▼</span></div>
+      <div class="gui-body" id="body-light">
+        <div class="gui-row">
+          <span class="gui-label">环境光</span>
+          <input type="range" id="amb-slider" min="0" max="3" step="0.05" value="0.6" oninput="setAmbient(this.value)">
+          <span class="gui-val" id="amb-val">0.6</span>
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">主光源</span>
+          <input type="range" id="dir-slider" min="0" max="4" step="0.05" value="1.2" oninput="setDirLight(this.value)">
+          <span class="gui-val" id="dir-val">1.2</span>
+        </div>
+        <div class="gui-row">
+          <span class="gui-label">背景色</span>
+          <input type="color" id="bg-color" value="#0f0f1a" oninput="setBgColor(this.value)" style="flex:1;height:24px;border:none;background:none;cursor:pointer;">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 进度条 -->
+  <div id="progress-wrap"><div id="progress-bar"></div></div>
+  <input type="file" id="file-input" accept=".fbx">
+</div>
+
+<!-- Three.js via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.161.0/examples/js/loaders/FBXLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  SCENE SETUP
+// ═══════════════════════════════════════════════════════
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f0f1a);
+scene.fog = new THREE.FogExp2(0x0f0f1a, 0.008);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 2000);
+camera.position.set(0, 2, 8);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.getElementById('app').prepend(renderer.domElement);
+
+// Controls
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.minDistance = 0.1;
+controls.maxDistance = 500;
+
+// Lights
+const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+scene.add(ambient);
+
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(5, 10, 5);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.near = 0.1;
+dirLight.shadow.camera.far = 100;
+dirLight.shadow.camera.left = -20;
+dirLight.shadow.camera.right = 20;
+dirLight.shadow.camera.top = 20;
+dirLight.shadow.camera.bottom = -20;
+scene.add(dirLight);
+
+const fillLight = new THREE.DirectionalLight(0x8899ff, 0.35);
+fillLight.position.set(-4, 2, -4);
+scene.add(fillLight);
+
+// Ground
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(200, 200),
+  new THREE.MeshStandardMaterial({ color: 0x111120, roughness: 0.9, metalness: 0.1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(60, 60, 0x223355, 0x1a2240);
+scene.add(grid);
+
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+let mixer = null, clock = new THREE.Clock();
+let model = null, skeletonHelper = null;
+let actions = {}, currentAction = null, currentClip = null;
+let isPlaying = true, isLooping = true;
+let animClips = [];
+let seeking = false;
+
+// ═══════════════════════════════════════════════════════
+//  GUI HELPERS
+// ═══════════════════════════════════════════════════════
+function toggleSection(id) {
+  const body = document.getElementById('body-' + id);
+  const arrow = document.getElementById('arrow-' + id);
+  if (body.classList.toggle('collapsed')) arrow.textContent = '▶';
+  else arrow.textContent = '▼';
+}
+
+function setInfo(msg) { document.getElementById('file-info').textContent = msg; }
+
+// ═══════════════════════════════════════════════════════
+//  LOAD FBX
+// ═══════════════════════════════════════════════════════
+function loadFBX(file) {
+  // show progress
+  const pw = document.getElementById('progress-wrap');
+  const pb = document.getElementById('progress-bar');
+  pw.style.display = 'block';
+  pb.style.width = '0%';
+
+  setInfo('⏳ 读取: ' + file.name);
+
+  const reader = new FileReader();
+  reader.onprogress = e => {
+    if (e.lengthComputable) pb.style.width = (e.loaded / e.total * 60) + '%';
+  };
+  reader.onerror = () => setInfo('❌ 文件读取失败');
+  reader.onload = e => {
+    pb.style.width = '70%';
+    setInfo('⏳ 解析FBX...');
+
+    try {
+      // cleanup old
+      if (model) { scene.remove(model); model = null; }
+      if (skeletonHelper) { scene.remove(skeletonHelper); skeletonHelper = null; }
+      if (mixer) { mixer.stopAllAction(); mixer = null; }
+      actions = {}; currentAction = null; currentClip = null;
+
+      const loader = new THREE.FBXLoader();
+      const fbx = loader.parse(e.target.result, '');
+
+      pb.style.width = '85%';
+
+      // auto-scale
+      const box = new THREE.Box3().setFromObject(fbx);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      if (maxDim > 0) fbx.scale.setScalar(4 / maxDim);
+
+      // place on ground
+      const box2 = new THREE.Box3().setFromObject(fbx);
+      const c = box2.getCenter(new THREE.Vector3());
+      fbx.position.set(-c.x, -box2.min.y, -c.z);
+
+      fbx.traverse(n => {
+        if (n.isMesh) {
+          n.castShadow = true;
+          n.receiveShadow = true;
+          const mats = Array.isArray(n.material) ? n.material : [n.material];
+          mats.forEach(m => { m.side = THREE.DoubleSide; });
+        }
+      });
+
+      scene.add(fbx);
+      model = fbx;
+
+      // skeleton helper (hidden by default)
+      skeletonHelper = new THREE.SkeletonHelper(fbx);
+      skeletonHelper.visible = false;
+      scene.add(skeletonHelper);
+
+      // animations
+      animClips = fbx.animations || [];
+      mixer = new THREE.AnimationMixer(fbx);
+      actions = {};
+      animClips.forEach((clip, i) => {
+        if (!clip.name) clip.name = 'Animation_' + i;
+        actions[clip.name] = mixer.clipAction(clip);
+      });
+
+      // update GUI
+      updateAnimSelect();
+      updateModelInfo(fbx);
+      document.getElementById('gui-panel').style.display = 'block';
+      document.getElementById('welcome').classList.add('hidden');
+
+      // play first
+      if (animClips.length > 0) playClip(animClips[0].name);
+
+      resetCamera();
+      pb.style.width = '100%';
+      setInfo(`✅ ${file.name}  |  动画: ${animClips.length}  |  拖拽新文件可替换`);
+      setTimeout(() => { pw.style.display = 'none'; pb.style.width = '0%'; }, 600);
+
+    } catch(err) {
+      pb.style.width = '0%';
+      pw.style.display = 'none';
+      setInfo('❌ 解析失败: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function updateAnimSelect() {
+  const sel = document.getElementById('anim-select');
+  sel.innerHTML = '';
+  if (animClips.length === 0) {
+    sel.innerHTML = '<option value="">无动画</option>';
+    return;
+  }
+  animClips.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.name; opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+}
+
+function updateModelInfo(fbx) {
+  let meshes = 0, polys = 0, bones = 0;
+  fbx.traverse(n => {
+    if (n.isMesh) {
+      meshes++;
+      const geo = n.geometry;
+      polys += geo.index ? geo.index.count / 3 : geo.attributes.position.count / 3;
+    }
+    if (n.isBone) bones++;
+  });
+  document.getElementById('info-meshes').textContent = meshes;
+  document.getElementById('info-polys').textContent = polys > 999 ? (polys/1000).toFixed(1)+'k' : Math.round(polys);
+  document.getElementById('info-anims').textContent = animClips.length;
+  document.getElementById('info-bones').textContent = bones;
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATION CONTROLS
+// ═══════════════════════════════════════════════════════
+function playClip(name) {
+  if (!mixer || !actions[name]) return;
+  if (currentAction) currentAction.fadeOut(0.25);
+  currentClip = animClips.find(c => c.name === name);
+  currentAction = actions[name];
+  currentAction.setLoop(isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+  currentAction.clampWhenFinished = !isLooping;
+  currentAction.timeScale = parseFloat(document.getElementById('speed-slider').value);
+  currentAction.reset().fadeIn(0.25).play();
+  currentAction.paused = !isPlaying;
+  document.getElementById('anim-select').value = name;
+}
+
+function switchAnim(name) { playClip(name); }
+
+function togglePlay() {
+  isPlaying = !isPlaying;
+  if (currentAction) currentAction.paused = !isPlaying;
+  const btn = document.getElementById('btn-play');
+  btn.textContent = isPlaying ? '⏸ 暂停' : '▶ 播放';
+  btn.classList.toggle('active', isPlaying);
+}
+
+function resetAnim() {
+  if (currentAction) { currentAction.reset(); currentAction.play(); currentAction.paused = !isPlaying; }
+}
+
+function toggleLoop() {
+  isLooping = !isLooping;
+  const btn = document.getElementById('btn-loop');
+  btn.classList.toggle('active', isLooping);
+  if (currentAction) {
+    currentAction.setLoop(isLooping ? THREE.LoopRepeat : THREE.LoopOnce);
+    currentAction.clampWhenFinished = !isLooping;
+  }
+}
+
+function setSpeed(v) {
+  document.getElementById('speed-val').textContent = parseFloat(v).toFixed(1) + 'x';
+  if (currentAction) currentAction.timeScale = parseFloat(v);
+}
+
+function seekAnim(v) {
+  if (currentAction && currentClip) {
+    currentAction.time = parseFloat(v) * currentClip.duration;
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCENE CONTROLS
+// ═══════════════════════════════════════════════════════
+function toggleGround(v) { ground.visible = v; }
+function toggleGrid(v)   { grid.visible = v; }
+function toggleWire(v)   {
+  if (!model) return;
+  model.traverse(n => { if (n.isMesh) { const m = Array.isArray(n.material)?n.material:[n.material]; m.forEach(x=>x.wireframe=v); }});
+}
+function toggleSkeleton(v) { if (skeletonHelper) skeletonHelper.visible = v; }
+
+function resetCamera() {
+  if (!model) { camera.position.set(0,2,8); controls.target.set(0,1,0); controls.update(); return; }
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z);
+  camera.position.set(center.x, center.y + maxDim * 0.5, center.z + maxDim * 1.5);
+  controls.target.copy(center);
+  controls.update();
+}
+
+function setAmbient(v) { ambient.intensity = parseFloat(v); document.getElementById('amb-val').textContent = parseFloat(v).toFixed(1); }
+function setDirLight(v) { dirLight.intensity = parseFloat(v); document.getElementById('dir-val').textContent = parseFloat(v).toFixed(1); }
+function setBgColor(v) { scene.background = new THREE.Color(v); if (scene.fog) scene.fog.color = new THREE.Color(v); }
+
+// ═══════════════════════════════════════════════════════
+//  FILE INPUT
+// ═══════════════════════════════════════════════════════
+const fileInput = document.getElementById('file-input');
+document.getElementById('load-btn').onclick = () => fileInput.click();
+document.getElementById('drop-zone').onclick = () => fileInput.click();
+fileInput.onchange = e => { if (e.target.files[0]) loadFBX(e.target.files[0]); e.target.value=''; };
+
+// Drag & Drop (anywhere)
+document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drag-overlay').classList.add('active'); });
+document.addEventListener('dragleave', e => { if (!e.relatedTarget) document.getElementById('drag-overlay').classList.remove('active'); });
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.getElementById('drag-overlay').classList.remove('active');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.toLowerCase().endsWith('.fbx')) loadFBX(f);
+  else setInfo('❌ 请拖入 .fbx 文件');
+});
+
+// Drop zone drag
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.name.toLowerCase().endsWith('.fbx')) loadFBX(f);
+});
+
+// ═══════════════════════════════════════════════════════
+//  RESIZE
+// ═══════════════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ═══════════════════════════════════════════════════════
+//  RENDER LOOP
+// ═══════════════════════════════════════════════════════
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+  if (mixer) {
+    mixer.update(dt);
+    // update progress slider & time
+    if (currentAction && currentClip && !seeking) {
+      const t = currentAction.time;
+      const d = currentClip.duration;
+      document.getElementById('progress-slider').value = d > 0 ? t / d : 0;
+      document.getElementById('time-val').textContent = t.toFixed(1) + 's';
+    }
+  }
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+// progress slider mouse events
+const ps = document.getElementById('progress-slider');
+ps.addEventListener('mousedown', () => { seeking = true; });
+ps.addEventListener('mouseup',   () => { seeking = false; });
+
+animate();
+</script>
+</body>
 </html>
