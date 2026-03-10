@@ -188,70 +188,106 @@ function playAnimation(name) {
 }
 
 // ─── FBX Loader ────────────────────────────────────────────────────────────
+function setInfo(msg) {
+  document.getElementById('info').textContent = msg;
+}
+
 function loadFBX(file) {
   const loader = new FBXLoader();
-  const url = URL.createObjectURL(file);
+  let objectUrl = null;
 
-  document.getElementById('info').textContent = '⏳ 正在加载 ' + file.name + ' ...';
+  // Read file as ArrayBuffer for reliable loading
+  const reader = new FileReader();
+  setInfo('⏳ 正在读取文件: ' + file.name);
 
-  loader.load(url, (fbx) => {
-    // Remove old model
-    if (currentModel) {
-      scene.remove(currentModel);
-      if (mixer) mixer.stopAllAction();
+  reader.onprogress = (e) => {
+    if (e.lengthComputable) {
+      setInfo(`⏳ 读取中... ${Math.round(e.loaded / e.total * 100)}%`);
     }
+  };
 
-    currentModel = fbx;
+  reader.onerror = () => {
+    setInfo('❌ 文件读取失败，请重试');
+  };
 
-    // Auto scale
-    const box = new THREE.Box3().setFromObject(fbx);
-    const size = box.getSize(new THREE.Vector3());
-    const maxDim = Math.max(size.x, size.y, size.z);
-    const scale = 3 / maxDim;
-    fbx.scale.setScalar(scale);
+  reader.onload = (e) => {
+    setInfo('⏳ 解析FBX中...');
+    try {
+      // Parse FBX from ArrayBuffer directly
+      const fbx = loader.parse(e.target.result, '');
 
-    // Center
-    box.setFromObject(fbx);
-    const center = box.getCenter(new THREE.Vector3());
-    fbx.position.sub(center);
-    fbx.position.y = 0;
-
-    fbx.traverse(c => {
-      if (c.isMesh) {
-        c.castShadow = true;
-        c.receiveShadow = true;
+      // Remove old model
+      if (currentModel) {
+        scene.remove(currentModel);
+        if (mixer) {
+          mixer.stopAllAction();
+          mixer.uncacheRoot(currentModel);
+        }
       }
-    });
 
-    scene.add(fbx);
+      currentModel = fbx;
 
-    // Animations
-    animations = fbx.animations || [];
-    mixer = new THREE.AnimationMixer(fbx);
+      // Add to scene first, then compute bounding box
+      scene.add(fbx);
 
-    const animNames = animations.map((a, i) => a.name || `Animation_${i}`);
-    if (animNames.length > 0) {
-      state.animationName = animNames[0];
-      playAnimation(animNames[0]);
+      // Auto scale based on bounding box
+      const box = new THREE.Box3().setFromObject(fbx);
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+
+      if (maxDim > 0) {
+        const targetSize = 3;
+        const scale = targetSize / maxDim;
+        fbx.scale.setScalar(scale);
+      }
+
+      // Re-center after scale
+      const box2 = new THREE.Box3().setFromObject(fbx);
+      const center = box2.getCenter(new THREE.Vector3());
+      fbx.position.x -= center.x;
+      fbx.position.z -= center.z;
+      fbx.position.y -= box2.min.y; // sit on ground
+
+      // Enable shadows
+      fbx.traverse(c => {
+        if (c.isMesh) {
+          c.castShadow = true;
+          c.receiveShadow = true;
+          if (c.material) {
+            const mats = Array.isArray(c.material) ? c.material : [c.material];
+            mats.forEach(m => { m.side = THREE.DoubleSide; });
+          }
+        }
+      });
+
+      // Setup animations
+      animations = fbx.animations || [];
+      mixer = new THREE.AnimationMixer(fbx);
+
+      const animNames = animations.map((a, i) => a.name || `Animation_${i}`);
+
+      if (animNames.length > 0) {
+        state.animationName = animNames[0];
+        playAnimation(animNames[0]);
+      }
+
+      setupGUI();
+      resetCamera();
+
+      setInfo(`✅ 已加载: ${file.name}  |  动画数: ${animations.length}  |  拖拽新文件可替换`);
+
+    } catch (err) {
+      console.error('FBX解析错误:', err);
+      setInfo('❌ FBX解析失败: ' + (err.message || '未知错误'));
     }
 
-    setupGUI();
-    resetCamera();
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+  };
 
-    document.getElementById('info').textContent =
-      `✅ 已加载: ${file.name}  |  动画数: ${animations.length}  |  拖拽新文件可替换`;
-
-    URL.revokeObjectURL(url);
-  },
-  (xhr) => {
-    const pct = Math.round(xhr.loaded / xhr.total * 100);
-    document.getElementById('info').textContent = `⏳ 加载中... ${pct}%`;
-  },
-  (err) => {
-    document.getElementById('info').textContent = '❌ 加载失败: ' + err.message;
-    console.error(err);
-    URL.revokeObjectURL(url);
-  });
+  reader.readAsArrayBuffer(file);
 }
 
 // ─── Camera Reset ──────────────────────────────────────────────────────────
