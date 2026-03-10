@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FBX2Animation - Three.js FBX动画播放器</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body { background: #1a1a2e; overflow: hidden; font-family: sans-serif; }
+      #canvas-container { width: 100vw; height: 100vh; }
+      #drop-overlay {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+      #drop-overlay.active { opacity: 1; pointer-events: all; }
+      #drop-overlay .icon { font-size: 80px; margin-bottom: 20px; }
+      #drop-overlay .text { color: white; font-size: 24px; }
+      #upload-btn {
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: #4f8ef7;
+        color: white;
+        padding: 12px 28px;
+        border-radius: 8px;
+        font-size: 16px;
+        cursor: pointer;
+        z-index: 100;
+        box-shadow: 0 4px 15px rgba(79,142,247,0.4);
+        transition: background 0.2s;
+        display: inline-block;
+        user-select: none;
+      }
+      #upload-btn:hover { background: #3a7bd5; }
+      #info {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #aaa;
+        font-size: 14px;
+        z-index: 100;
+        pointer-events: none;
+      }
+    </style>
+    <script type="module" crossorigin src="/assets/index-L9DEYZES.js"></script>
+  </head>
+  <body>
+    <div id="canvas-container"></div>
+    <div id="drop-overlay">
+      <div class="icon">📦</div>
+      <div class="text">松开以导入 FBX 文件</div>
+    </div>
+    <div id="info">拖拽 FBX 文件到此处，或点击下方按钮导入</div>
+    <label id="upload-btn" for="file-input">📂 导入 FBX 文件</label>
+    <input type="file" id="file-input" accept=".fbx" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);opacity:0;width:160px;height:44px;cursor:pointer;z-index:101;" />
+  </body>
+</html>
